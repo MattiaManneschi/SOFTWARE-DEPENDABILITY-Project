@@ -1,8 +1,8 @@
 # macOS
 .DS_Store
 
-# LaTeX source and auxiliary files
-*.tex
+# LaTeX source folder
+report_tex/
 *.aux
 *.log
 *.toc
