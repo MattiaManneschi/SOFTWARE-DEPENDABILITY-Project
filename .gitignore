@@ -1,0 +1,22 @@
+# macOS
+.DS_Store
+
+# LaTeX source and auxiliary files
+*.tex
+*.aux
+*.log
+*.toc
+*.out
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+*.bbl
+*.blg
+*.bcf
+*.run.xml
+
+# Claude Code
+.claude/
+
+# NuXmv installation
+NuXmv*/

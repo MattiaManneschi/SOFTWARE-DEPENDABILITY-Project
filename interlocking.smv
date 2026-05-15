@@ -1,0 +1,214 @@
+-- ============================================================
+-- Railway Interlocking System
+-- Software Dependability - Project Work A.A. 2025-26 - Tema 1
+-- ============================================================
+
+-- ---- SCAMBIO (Switch) Module ----
+-- States: NORMAL <-> TOREV <-> REVERSE <-> TONORM <-> NORMAL
+-- Commands: revcmd (go to REVERSE), normcmd (go to NORMAL)
+-- Outcome: nondeterministic SUCC or FAIL from the motor
+MODULE scambio(revcmd, normcmd)
+VAR
+  state  : {NORMAL, TOREV, REVERSE, TONORM};
+IVAR
+  outcome : {SUCC, FAIL};
+ASSIGN
+  init(state) := NORMAL;
+  next(state) := case
+    state = NORMAL  & revcmd          : TOREV;
+    state = REVERSE & normcmd         : TONORM;
+    state = TOREV   & outcome = SUCC  : REVERSE;
+    state = TOREV   & outcome = FAIL  : NORMAL;
+    state = TONORM  & outcome = SUCC  : NORMAL;
+    state = TONORM  & outcome = FAIL  : REVERSE;
+    TRUE                              : state;
+  esac;
+
+
+-- ---- ITINERARIO (Route) Module ----
+-- States: IDLE -> REQUESTED -> RESERVED -> IDLE
+-- Inputs:
+--   req        : acquisition request
+--   release    : release request
+--   noconflict : all conflicting itineraries are in IDLE
+--   failed     : at least one switch did not reach target position
+--   stable     : all commanded switches are in a stable state (NORMAL or REVERSE)
+MODULE itinerario(req, release, noconflict, failed, stable)
+VAR
+  state : {IDLE, REQUESTED, RESERVED};
+ASSIGN
+  init(state) := IDLE;
+  next(state) := case
+    state = IDLE      & req & noconflict      : REQUESTED;
+    state = REQUESTED & stable & !failed      : RESERVED;
+    state = REQUESTED & stable  & failed      : IDLE;
+    state = RESERVED  & release               : IDLE;
+    TRUE                                      : state;
+  esac;
+
+
+-- ---- MAIN MODULE ----
+MODULE main
+VAR
+  -- 4 switch instances
+  s1 : scambio(s1_revcmd, s1_normcmd);
+  s2 : scambio(s2_revcmd, s2_normcmd);
+  s3 : scambio(s3_revcmd, s3_normcmd);
+  s4 : scambio(s4_revcmd, s4_normcmd);
+
+  -- 4 itinerary instances
+  AB : itinerario(req_AB, rel_AB, noconflict_AB, failed_AB, stable_AB);
+  AD : itinerario(req_AD, rel_AD, noconflict_AD, failed_AD, stable_AD);
+  CB : itinerario(req_CB, rel_CB, noconflict_CB, failed_CB, stable_CB);
+  CD : itinerario(req_CD, rel_CD, noconflict_CD, failed_CD, stable_CD);
+
+IVAR
+  -- Nondeterministic external requests and releases
+  req_AB : boolean;
+  req_AD : boolean;
+  req_CB : boolean;
+  req_CD : boolean;
+  rel_AB : boolean;
+  rel_AD : boolean;
+  rel_CB : boolean;
+  rel_CD : boolean;
+
+DEFINE
+  -- ----------------------------------------------------------
+  -- NOCONFLICT: all conflicting itineraries are in IDLE
+  -- Conflict table: AB<->AD, AB<->CB, AD<->CB, AD<->CD, CB<->CD
+  -- ----------------------------------------------------------
+  noconflict_AB := AD.state = IDLE & CB.state = IDLE;
+  noconflict_AD := AB.state = IDLE & CB.state = IDLE & CD.state = IDLE;
+  noconflict_CB := AB.state = IDLE & AD.state = IDLE & CD.state = IDLE;
+  noconflict_CD := AD.state = IDLE & CB.state = IDLE;
+
+  -- ----------------------------------------------------------
+  -- COMMANDS: command pulses issued at IDLE -> REQUESTED transition
+  -- ----------------------------------------------------------
+  cmd_AB := AB.state = IDLE & req_AB & noconflict_AB;
+  cmd_AD := AD.state = IDLE & req_AD & noconflict_AD;
+  cmd_CB := CB.state = IDLE & req_CB & noconflict_CB;
+  cmd_CD := CD.state = IDLE & req_CD & noconflict_CD;
+
+  -- Switch command signals (derived from which itinerary is being acquired)
+  --   s1: AB->NORMAL, AD->NORMAL, CB->REVERSE
+  s1_normcmd := cmd_AB | cmd_AD;
+  s1_revcmd  := cmd_CB;
+
+  --   s2: AB->NORMAL, AD->REVERSE, CB->NORMAL
+  s2_normcmd := cmd_AB | cmd_CB;
+  s2_revcmd  := cmd_AD;
+
+  --   s3: CB->REVERSE, CD->NORMAL
+  s3_normcmd := cmd_CD;
+  s3_revcmd  := cmd_CB;
+
+  --   s4: AD->REVERSE, CD->NORMAL
+  s4_normcmd := cmd_CD;
+  s4_revcmd  := cmd_AD;
+
+  -- ----------------------------------------------------------
+  -- STABLE: all switches used by the itinerary are in a stable state
+  -- ----------------------------------------------------------
+  stable_AB := (s1.state = NORMAL | s1.state = REVERSE) &
+               (s2.state = NORMAL | s2.state = REVERSE);
+
+  stable_AD := (s1.state = NORMAL | s1.state = REVERSE) &
+               (s2.state = NORMAL | s2.state = REVERSE) &
+               (s4.state = NORMAL | s4.state = REVERSE);
+
+  stable_CB := (s1.state = NORMAL | s1.state = REVERSE) &
+               (s2.state = NORMAL | s2.state = REVERSE) &
+               (s3.state = NORMAL | s3.state = REVERSE);
+
+  stable_CD := (s3.state = NORMAL | s3.state = REVERSE) &
+               (s4.state = NORMAL | s4.state = REVERSE);
+
+  -- ----------------------------------------------------------
+  -- FAILED: at least one switch did not reach its target position
+  -- OK = !FAILED
+  -- ----------------------------------------------------------
+  failed_AB := !(s1.state = NORMAL  & s2.state = NORMAL);
+  failed_AD := !(s1.state = NORMAL  & s2.state = REVERSE & s4.state = REVERSE);
+  failed_CB := !(s1.state = REVERSE & s2.state = NORMAL  & s3.state = REVERSE);
+  failed_CD := !(s3.state = NORMAL  & s4.state = NORMAL);
+
+
+-- ============================================================
+-- FAIRNESS CONSTRAINTS
+-- Each switch eventually succeeds; each reserved itinerary eventually releases;
+-- each itinerary is eventually requested (needed for Fairness LTL check).
+-- ============================================================
+FAIRNESS s1.outcome = SUCC
+FAIRNESS s2.outcome = SUCC
+FAIRNESS s3.outcome = SUCC
+FAIRNESS s4.outcome = SUCC
+FAIRNESS rel_AB
+FAIRNESS rel_AD
+FAIRNESS rel_CB
+FAIRNESS rel_CD
+FAIRNESS req_AB
+FAIRNESS req_AD
+FAIRNESS req_CB
+FAIRNESS req_CD
+
+
+-- ============================================================
+-- SAFETY-1 (No-collision):
+-- No two conflicting itineraries are simultaneously in RESERVED.
+-- ============================================================
+SPEC AG !(AB.state = RESERVED & AD.state = RESERVED)
+SPEC AG !(AB.state = RESERVED & CB.state = RESERVED)
+SPEC AG !(AD.state = RESERVED & CB.state = RESERVED)
+SPEC AG !(AD.state = RESERVED & CD.state = RESERVED)
+SPEC AG !(CB.state = RESERVED & CD.state = RESERVED)
+
+
+-- ============================================================
+-- SAFETY-2 (No-derailment):
+-- When an itinerary is RESERVED, its switches are not moving (not in transitioning
+-- states TOREV/TONORM), which implies no positioning command was issued to them.
+-- Equivalent formulation that avoids IVAR references in SPEC.
+-- ============================================================
+SPEC AG (AB.state = RESERVED ->
+         s1.state != TOREV & s1.state != TONORM &
+         s2.state != TOREV & s2.state != TONORM)
+
+SPEC AG (AD.state = RESERVED ->
+         s1.state != TOREV & s1.state != TONORM &
+         s2.state != TOREV & s2.state != TONORM &
+         s4.state != TOREV & s4.state != TONORM)
+
+SPEC AG (CB.state = RESERVED ->
+         s1.state != TOREV & s1.state != TONORM &
+         s2.state != TOREV & s2.state != TONORM &
+         s3.state != TOREV & s3.state != TONORM)
+
+SPEC AG (CD.state = RESERVED ->
+         s3.state != TOREV & s3.state != TONORM &
+         s4.state != TOREV & s4.state != TONORM)
+
+
+-- ============================================================
+-- LIVENESS:
+-- For every itinerary, after a request, it is POSSIBLE to reach RESERVED.
+-- (Existential: there exists a path to RESERVED from REQUESTED)
+-- ============================================================
+SPEC AG (AB.state = REQUESTED -> EF AB.state = RESERVED)
+SPEC AG (AD.state = REQUESTED -> EF AD.state = RESERVED)
+SPEC AG (CB.state = REQUESTED -> EF CB.state = RESERVED)
+SPEC AG (CD.state = REQUESTED -> EF CD.state = RESERVED)
+
+
+-- ============================================================
+-- FAIRNESS (No indefinite delay):
+-- Under fairness assumptions (switches eventually succeed, conflicting itineraries
+-- eventually release, requests eventually arrive), every itinerary that is IDLE
+-- will eventually be served (reach RESERVED).
+-- Formulated without IVAR references using state variables only.
+-- ============================================================
+LTLSPEC G (AB.state = IDLE -> F AB.state = RESERVED)
+LTLSPEC G (AD.state = IDLE -> F AD.state = RESERVED)
+LTLSPEC G (CB.state = IDLE -> F CB.state = RESERVED)
+LTLSPEC G (CD.state = IDLE -> F CD.state = RESERVED)
