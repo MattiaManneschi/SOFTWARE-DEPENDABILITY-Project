@@ -1,4 +1,4 @@
-read_model -i interlocking.smv
+read_model -i ../interlocking.smv
 flatten_hierarchy
 encode_variables
 build_model
