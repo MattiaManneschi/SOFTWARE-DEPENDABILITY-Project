@@ -13,13 +13,14 @@ Il sistema gestisce quattro itinerari (A-B, A-D, C-B, C-D) e quattro scambi (s1�
 
 ```
 interlocking.smv          # Modello NuXmv del sistema
-simulazioni/
+verifiche/
   controllo_statico.cmd   # Verifica correttezza statica (check_fsm)
   01_sequenza_AD_poi_AB.cmd
   02_fallimento_e_retry_CB.cmd
   03_parallelo_AB_e_CD.cmd
   04_blocco_AB_da_AD.cmd
 report.pdf                # Relazione finale
+testo_elaborato.pdf       # Testo dell'elaborato
 ```
 
 ## Proprietà verificate
@@ -41,6 +42,6 @@ La proprietà di Fairness è falsa per limitazione intrinseca della specifica: l
 
 ```bash
 nuXmv interlocking.smv
-nuXmv -source simulazioni/controllo_statico.cmd
-nuXmv -source simulazioni/01_sequenza_AD_poi_AB.cmd
+nuXmv -source verifiche/controllo_statico.cmd
+nuXmv -source verifiche/01_sequenza_AD_poi_AB.cmd
 ```
